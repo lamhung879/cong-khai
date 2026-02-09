@@ -18,12 +18,12 @@ jobs:
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
       YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
 
-      # chon thumb tieude bat dau
-      SEQ_BASE_RUN: "5"
+      # chọn thumb tiêu đề bắt đầu
+      SEQ_BASE_RUN: "6"
       TITLE_START: "1"
       THUMB_START: "1"
 
-      # công tắt chọn poll hoặc cloudflare
+      # công tắc chọn poll hoặc cloudflare
       IMG_PROVIDER: cloudflare
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       CF_API_TOKEN:  ${{ secrets.CF_API_TOKEN }}
@@ -51,19 +51,19 @@ jobs:
             echo "mode=none" >> "$GITHUB_OUTPUT"
           fi
 
-      # >>> FIX LỖI INPUTS KHI CHẠY THEO LỊCH <<<
+      # >>> FIX input mặc định khi chạy không truyền inputs <<<
       - name: Resolve parameters (support schedule without inputs)
         id: params
         run: |
           repo="${{ inputs.private_repo }}"; [ -z "$repo" ] && repo="lamhung879/rieng-tu"; echo "repo=$repo" >> "$GITHUB_OUTPUT"
-          ref="${{ inputs.private_ref }}";   [ -z "$ref" ] && ref="main";                                           echo "ref=$ref"   >> "$GITHUB_OUTPUT"
-          wd="${{ inputs.workdir }}";        [ -z "$wd" ]  && wd=".";                                               echo "workdir=$wd" >> "$GITHUB_OUTPUT"
-          privacy="${{ inputs.youtube_privacy }}"; [ -z "$privacy" ] && privacy="public";                           echo "privacy=$privacy" >> "$GITHUB_OUTPUT"
+          ref="${{ inputs.private_ref }}";   [ -z "$ref" ] && ref="main";                   echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          wd="${{ inputs.workdir }}";        [ -z "$wd" ]  && wd=".";                       echo "workdir=$wd" >> "$GITHUB_OUTPUT"
+          privacy="${{ inputs.youtube_privacy }}"; [ -z "$privacy" ] && privacy="public";   echo "privacy=$privacy" >> "$GITHUB_OUTPUT"
 
       - name: Export resolved privacy to env
         run: echo "YOUTUBE_PRIVACY=${{ steps.params.outputs.privacy }}" >> "$GITHUB_ENV"
 
-      # KÉO CODE từ repo PRIVATE (PAT)
+      # Kéo code từ repo PRIVATE (PAT)
       - name: Checkout PRIVATE via PAT
         if: ${{ steps.auth.outputs.mode == 'pat' }}
         uses: actions/checkout@v4
@@ -75,7 +75,7 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           persist-credentials: false
 
-      # KÉO CODE từ repo PRIVATE (SSH)
+      # Kéo code từ repo PRIVATE (SSH)
       - name: Checkout PRIVATE via SSH Deploy Key
         if: ${{ steps.auth.outputs.mode == 'ssh' }}
         uses: actions/checkout@v4
@@ -100,7 +100,7 @@ jobs:
           echo "== 20 files in commit =="
           git ls-tree -r --name-only HEAD | head -n 20
 
-      # Tự tìm thư mục chứa scripts/generate_thumbnails.py (kể cả khi không nhập workdir)
+      # Tự tìm thư mục chứa scripts/generate_thumbnails.py
       - name: Detect script path
         id: find_script
         run: |
@@ -111,7 +111,7 @@ jobs:
           if [ -n "$DEFAULT" ] && [ -f "$BASE/$DEFAULT/scripts/generate_thumbnails.py" ]; then
             CAND="$BASE/$DEFAULT"
           else
-            CAND=$(cd "$BASE" && find . -type f -path "*/scripts/generate_thumbnails.py" -print -quit | sed 's|^\./||' | xargs -I{} dirname {} )
+            CAND=$(cd "$BASE" && find . -type f -path "*/scripts/generate_thumbnails.py" -print -quit | sed 's|^\./||' | xargs -I{} dirname {})
             [ -n "$CAND" ] && CAND="$BASE/$CAND"
           fi
           if [ -z "$CAND" ]; then
@@ -121,7 +121,7 @@ jobs:
           echo "dir=$CAND" >> "$GITHUB_OUTPUT"
           echo "[FOUND] $CAND"
 
-      # Bắt buộc có secrets YT để up thẳng
+      # Bắt buộc có secrets YT để upload thẳng
       - name: Require YT OAuth secrets
         shell: bash
         run: |
@@ -140,7 +140,7 @@ jobs:
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install system deps (ffmpeg)
         run: |
@@ -155,26 +155,32 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      # ===== FIX CHÍNH Ở ĐÂY =====
+      # ===== FIX CHÍNH: pin setuptools + cài whisper không build isolation =====
       - name: Install Python libs
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade "setuptools>=70" "wheel>=0.43" packaging
 
-          # Libs ảnh / video phụ trợ
+          # Pin backend build để giữ pkg_resources (tránh lỗi metadata-generation-failed của whisper)
+          python -m pip install --force-reinstall "setuptools==69.5.1" "wheel==0.43.0" packaging
+          python -c "import pkg_resources; print('pkg_resources OK')"
+
+          # Lib nền
           python -m pip install pillow opencv-python-headless numpy gdown imageio-ffmpeg
 
-          # Google API (nếu upload YouTube)
+          # Google API (nếu script upload YouTube)
           python -m pip install google-api-python-client google-auth google-auth-httplib2 google-auth-oauthlib
 
-          # Torch CPU + Torchaudio (đúng index CPU)
+          # Torch CPU + Torchaudio
           python -m pip install "torch==2.3.1" "torchaudio==2.3.1" --index-url https://download.pytorch.org/whl/cpu
 
-          # Whisper (gói đúng tên: openai-whisper) - fix lỗi pkg_resources
-          python -m pip install --no-cache-dir --prefer-binary --no-build-isolation "openai-whisper==20231117"
+          # Cài deps whisper trước
+          python -m pip install "numpy<2" tiktoken more-itertools tqdm regex
 
-          # Kiểm tra import
-          python -c "import whisper, torch, torchaudio, pkg_resources; print('Whisper/Torch OK:', whisper.__version__, torch.__version__)"
+          # Cài whisper bằng env hiện tại (không build isolation)
+          PIP_NO_BUILD_ISOLATION=1 python -m pip install --no-cache-dir --no-binary=:all: "openai-whisper==20231117"
+
+          # Verify
+          python -c "import whisper, torch, torchaudio, pkg_resources; print('Whisper OK:', whisper.__version__, torch.__version__)"
 
       - name: Install Python deps
         run: |
@@ -189,18 +195,20 @@ jobs:
                         google-api-python-client google-auth google-auth-httplib2 \
                         imageio-ffmpeg
           fi
-          # đảm bảo requirements không kéo ngược setuptools
-          python -m pip check || true
-          python -m pip install --upgrade "setuptools>=70" "wheel>=0.43"
 
-      # CHẠY CODE trong repo PRIVATE (upload YouTube trực tiếp)
+          # Re-pin sau requirements để tránh bị kéo ngược
+          python -m pip install --force-reinstall "setuptools==69.5.1" "wheel==0.43.0"
+          python -c "import pkg_resources; print('pkg_resources still OK')"
+          python -m pip check || true
+
+      # Chạy code trong repo PRIVATE
       - name: Run pipeline in PRIVATE
         working-directory: ${{ steps.find_script.outputs.dir }}
         run: |
           set -e
           python -u scripts/generate_thumbnails.py
 
-      # Commit & PUSH 3 CSV về repo PRIVATE qua PAT (nếu checkout bằng PAT)
+      # Commit & PUSH CSV về repo PRIVATE qua PAT
       - name: Commit & push state CSVs back to PRIVATE (PAT)
         if: ${{ steps.auth.outputs.mode == 'pat' }}
         working-directory: private-src
@@ -234,7 +242,7 @@ jobs:
           git commit -m "ci(state): update promptdalay.csv, links_done.csv, tieudedalay.csv"
           git push origin HEAD:"${PRIVATE_REF}"
 
-      # Commit & PUSH 3 CSV về repo PRIVATE qua SSH (nếu checkout bằng SSH)
+      # Commit & PUSH CSV về repo PRIVATE qua SSH
       - name: Commit & push state CSVs back to PRIVATE (SSH)
         if: ${{ steps.auth.outputs.mode == 'ssh' }}
         working-directory: private-src
