@@ -1,11 +1,7 @@
 name: run-private-code
 
 on:
-  
-    
-    
   workflow_dispatch: {}
-
 
 jobs:
   run-private:
@@ -23,7 +19,7 @@ jobs:
       YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
 
       # chon thumb tieude bat dau
-      SEQ_BASE_RUN: "4"
+      SEQ_BASE_RUN: "5"
       TITLE_START: "1"
       THUMB_START: "1"
 
@@ -66,7 +62,6 @@ jobs:
 
       - name: Export resolved privacy to env
         run: echo "YOUTUBE_PRIVACY=${{ steps.params.outputs.privacy }}" >> "$GITHUB_ENV"
-
 
       # KÉO CODE từ repo PRIVATE (PAT)
       - name: Checkout PRIVATE via PAT
@@ -142,7 +137,6 @@ jobs:
           fi
           echo "[OK] YT secrets đầy đủ."
 
-
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -160,21 +154,27 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('private-src/**/requirements*.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
+
+      # ===== FIX CHÍNH Ở ĐÂY =====
       - name: Install Python libs
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade "setuptools>=70" "wheel>=0.43" packaging
+
           # Libs ảnh / video phụ trợ
           python -m pip install pillow opencv-python-headless numpy gdown imageio-ffmpeg
+
           # Google API (nếu upload YouTube)
           python -m pip install google-api-python-client google-auth google-auth-httplib2 google-auth-oauthlib
+
           # Torch CPU + Torchaudio (đúng index CPU)
           python -m pip install "torch==2.3.1" "torchaudio==2.3.1" --index-url https://download.pytorch.org/whl/cpu
-          # Whisper (gói đúng tên: openai-whisper)
-          python -m pip install "openai-whisper==20231117"
-          # loc banner qr
-          python -m pip install opencv-python-headless
-          # Kiểm tra import (dùng python -c để tránh lỗi YAML here-doc)
-          python -c "import sys; import whisper, torch, torchaudio; print('Whisper/Torch OK:', whisper.__version__, torch.__version__)"
+
+          # Whisper (gói đúng tên: openai-whisper) - fix lỗi pkg_resources
+          python -m pip install --no-cache-dir --prefer-binary --no-build-isolation "openai-whisper==20231117"
+
+          # Kiểm tra import
+          python -c "import whisper, torch, torchaudio, pkg_resources; print('Whisper/Torch OK:', whisper.__version__, torch.__version__)"
 
       - name: Install Python deps
         run: |
@@ -189,6 +189,9 @@ jobs:
                         google-api-python-client google-auth google-auth-httplib2 \
                         imageio-ffmpeg
           fi
+          # đảm bảo requirements không kéo ngược setuptools
+          python -m pip check || true
+          python -m pip install --upgrade "setuptools>=70" "wheel>=0.43"
 
       # CHẠY CODE trong repo PRIVATE (upload YouTube trực tiếp)
       - name: Run pipeline in PRIVATE
